@@ -1,13 +1,13 @@
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 # Copyright (c) 2025, Huawei Technologies Co., Ltd. All rights reserved.
 from typing import Optional, Callable, Tuple
+from functools import wraps
 
 import torch
 import torch_npu
 from torch.nn import Parameter
 
 from megatron.core.tensor_parallel.layers import _initialize_affine_weight_cpu, _initialize_affine_weight_gpu
-from megatron.core.transformer.moe.experts import expert_dist_ckpt_decorator
 from megatron.core.transformer.utils import sharded_state_dict_default
 from megatron.core import parallel_state
 from megatron.core.transformer.mlp import apply_swiglu_sharded_factory
@@ -25,6 +25,43 @@ from megatron.core.parallel_state import (
 from megatron.core.transformer.utils import make_sharded_tensors_for_checkpoint
 from mindspeed.args_utils import get_full_args as get_args
 from mindspeed.core.transformer.moe.grouped_gemm_util import Ops
+
+
+def expert_dist_ckpt_decorator(func):
+    """Decorator of shared_state_dict in expert layer for distributed checkpoint.
+    Since !1940, the TP size for Expert layer can be different with Attention.
+    To make distributed checkpoint work in such cases, we use a decorator to
+    replace the default TP parallel states with expert-TP parallel states.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Store original states
+        original_rank = parallel_state._MPU_TENSOR_MODEL_PARALLEL_RANK
+        original_size = parallel_state._MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE
+        original_group = parallel_state._TENSOR_MODEL_PARALLEL_GROUP
+        try:
+            # Set new states
+            parallel_state._MPU_TENSOR_MODEL_PARALLEL_RANK = (
+                parallel_state.get_expert_tensor_parallel_rank()
+            )
+            parallel_state._MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE = (
+                parallel_state.get_expert_tensor_parallel_world_size()
+            )
+            parallel_state._TENSOR_MODEL_PARALLEL_GROUP = (
+                parallel_state.get_expert_tensor_parallel_group()
+            )
+
+            # Execute the function
+            result = func(*args, **kwargs)
+        finally:
+            # Restore original states
+            parallel_state._MPU_TENSOR_MODEL_PARALLEL_RANK = original_rank
+            parallel_state._MPU_TENSOR_MODEL_PARALLEL_WORLD_SIZE = original_size
+            parallel_state._TENSOR_MODEL_PARALLEL_GROUP = original_group
+        return result
+
+    return wrapper
 
 
 class MindSpeedTEGroupedLinearGMM(torch.autograd.Function):
@@ -222,6 +259,8 @@ class MindSpeedTEGroupedLinear(torch.nn.Module):
             sharded_state_dict.update({f"{prefix}{k}": v for k, v in sub_sd.items()})
         return sharded_state_dict
 
+from megatron.core.process_groups_config import ProcessGroupCollection
+
 
 class MindSpeedTEColumnParallelGroupedLinear(MindSpeedTEGroupedLinear):
     """
@@ -241,7 +280,7 @@ class MindSpeedTEColumnParallelGroupedLinear(MindSpeedTEGroupedLinear):
             skip_bias_add: bool,
             is_expert: bool,
             tp_comm_buffer_name: Optional[str] = None,
-            tp_group: Optional[torch.distributed.ProcessGroup] = None,
+            pg_collection: Optional[ProcessGroupCollection] = None,
     ):
         super().__init__(
             num_gemms=num_gemms,
@@ -268,6 +307,7 @@ class MindSpeedTEColumnParallelGroupedLinear(MindSpeedTEGroupedLinear):
             tp_axis_map, prefix, sharded_offsets, metadata
         )
 
+from megatron.core.process_groups_config import ProcessGroupCollection
 
 class MindSpeedTERowParallelGroupedLinear(MindSpeedTEGroupedLinear):
     """
@@ -287,7 +327,7 @@ class MindSpeedTERowParallelGroupedLinear(MindSpeedTEGroupedLinear):
             skip_bias_add: bool,
             is_expert: bool,
             tp_comm_buffer_name: Optional[str] = None,
-            tp_group: Optional[torch.distributed.ProcessGroup] = None,
+            pg_collection: Optional[ProcessGroupCollection] = None,
     ):
         super().__init__(
             num_gemms=num_gemms,
@@ -323,3 +363,5 @@ def mindspeed_groupedmlp_weighted_bias_swiglu_impl(x, bias, probs, fp8_input_sto
     dtype = x.dtype
     res = fused_swiglu(x) * probs
     return res.to(dtype)
+
+
