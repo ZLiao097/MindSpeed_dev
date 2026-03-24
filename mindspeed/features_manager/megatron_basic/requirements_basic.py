@@ -53,6 +53,9 @@ class RequirementsBasicFeature(MindSpeedFeature):
         pm.register_patch('transformer_engine.pytorch.ops.ReLU', torch.nn.Module, create_dummy=True)
         pm.register_patch('transformer_engine.pytorch.ops.ReGLU', torch.nn.Module, create_dummy=True)
         pm.register_patch('transformer_engine.pytorch.ops.FusibleOperation', torch.nn.Module, create_dummy=True)
+        # FP8 tensor classes for TE version compatibility
+        pm.register_patch('transformer_engine.pytorch.tensor', create_dummy=True)
+        pm.register_patch('transformer_engine.pytorch.tensor.QuantizedTensor', torch.nn.Module, create_dummy=True)
         pm.register_patch('flash_attn.flash_attn_interface.flash_attn_unpadded_func', create_dummy=True)
 
     def apex_adaptation(self, pm, args):
