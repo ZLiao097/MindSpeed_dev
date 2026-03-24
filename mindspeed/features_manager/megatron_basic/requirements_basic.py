@@ -76,6 +76,9 @@ class RequirementsBasicFeature(MindSpeedFeature):
             pm.register_patch('apex.optimizers.FusedAdam', AdamW, create_dummy=True)
         pm.register_patch('apex.optimizers.FusedSGD', torch.optim.SGD, create_dummy=True)
 
+        from mindspeed.core.optimizer.distrib_optimizer import state_dict
+        pm.register_patch('megatron.core.optimizer.distrib_optimizer.DistributedOptimizer.state_dict', state_dict)
+
     def torch_adaptation(self, pm, args):
         from torch.distributed import all_gather_into_tensor, reduce_scatter_tensor
         from mindspeed.core.megatron_basic.requirements_basic import type_wrapper, ensure_contiguous_wrapper, lcm, \
