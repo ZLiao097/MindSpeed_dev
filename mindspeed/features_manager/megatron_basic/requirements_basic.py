@@ -29,6 +29,9 @@ class RequirementsBasicFeature(MindSpeedFeature):
     def te_adaptation(self, pm, args):
         from mindspeed.core.megatron_basic.requirements_basic import version_wrapper, dummy_compile
         from mindspeed.te.pytorch.module.layernorm import MindSpeedTELayernorm
+        import torch_npu
+        pm.register_patch('torch.cuda.nvtx.range_push', torch_npu.npu.mstx.range_start)
+        pm.register_patch('torch.cuda.nvtx.range_pop', torch_npu.npu.mstx.range_end)
         pm.register_patch('torch.compile', dummy_compile)
         pm.register_patch('torch.jit.script', dummy_compile)
         # Need replace modules before import megatron
