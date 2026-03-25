@@ -31,7 +31,7 @@ from megatron.core.transformer.utils import (
     sharded_state_dict_default,
 )
 from megatron.core.utils import deprecate_inference_params, nvtx_range_pop, nvtx_range_push
-from megatron.core.ssm.gated_delta_net import torch_chunk_gated_delta_rule
+from megatron.core.ssm.gated_delta_net import GatedDeltaNetSubmodules, _split_tensor_factory, torch_chunk_gated_delta_rule
 
 try:
     from fla.modules.convolution import causal_conv1d
