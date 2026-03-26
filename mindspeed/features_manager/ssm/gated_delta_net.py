@@ -1,9 +1,8 @@
 # Copyright (c) 2026, Huawei Technologies Co., Ltd. All rights reserved.
 
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 
 from mindspeed.features_manager.feature import MindSpeedFeature
-from mindspeed.patch_utils import MindSpeedPatchesManager
 
 
 class GDNFeature(MindSpeedFeature):
@@ -19,8 +18,8 @@ class GDNFeature(MindSpeedFeature):
 
     def register_patches(
             self,
-            patch_manager: MindSpeedPatchesManager,
-            args: Namespace
+            patch_manager,
+            args
     ):
         if getattr(args, self.feature_name, None) == 'gated_delta_net':
             from megatron.core.ssm.gated_delta_net import torch_chunk_gated_delta_rule

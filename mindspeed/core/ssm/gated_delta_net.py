@@ -338,7 +338,7 @@ class GatedDeltaNet(MegatronModule):
             if self.conv_bias
             else None
         )
-        if self.config.deterministic_mode:
+        if (causal_conv1d is None) or self.config.deterministic_mode:
             qkv = qkv.transpose(1, 2).contiguous()  # b, s, d -> b, d, s
             conv_out = F.conv1d(
                 input=qkv,  # Torch-native only accept [b, d, s] format input
