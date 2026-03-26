@@ -34,15 +34,20 @@ from megatron.core.utils import deprecate_inference_params, nvtx_range_pop, nvtx
 from megatron.core.ssm.gated_delta_net import GatedDeltaNetSubmodules, _split_tensor_factory, torch_chunk_gated_delta_rule
 
 try:
-    from fla.modules.convolution import causal_conv1d
     from fla.modules.l2norm import l2norm
+    from fla.ops.gated_delta_rule import chunk_gated_delta_rule
 
     HAVE_FLA = True
 except ImportError:
-    causal_conv1d = None
-    l2norm = None
+    chunk_gated_delta_rule = None
 
     HAVE_FLA = False
+
+try:
+    from causal_conv1d import causal_conv1d
+except ImportError:
+    causal_conv1d = None
+    causal_conv1d_update = None
 
 
 class GatedDeltaNet(MegatronModule):

@@ -87,12 +87,6 @@ class MegatronBasicFeature(MindSpeedFeature):
         from mindspeed.core.megatron_basic.megatron_basic import _synchronize_steps
         pm.register_patch('megatron.core.optimizer.optimizer.ChainedOptimizer._synchronize_steps', _synchronize_steps)
 
-        # gdn feature
-        from megatron.core.ssm.gated_delta_net import torch_chunk_gated_delta_rule
-        pm.register_patch('fla.ops.gated_delta_rule.chunk_gated_delta_rule', torch_chunk_gated_delta_rule)
-        from mindspeed.core.ssm.gated_delta_net import GatedDeltaNet
-        pm.register_patch('megatron.core.ssm.gated_delta_net.GatedDeltaNet', GatedDeltaNet)
-
     def register_non_mcore_basic_patches(self, pm, args):
         # args parser patch
         from mindspeed.core.megatron_basic.arguments_basic import parse_args_wrapper, validate_args_wrapper, print_args_wrapper
