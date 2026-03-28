@@ -184,8 +184,11 @@ class GatedDeltaNet(MegatronModule):
             )
         )
         setattr(self.A_log, "tensor_model_parallel", True)
-
-        self.gated_delta_rule = torch_chunk_gated_delta_rule
+        
+        if self.config.deterministic_mode:
+            self.gated_delta_rule = torch_chunk_gated_delta_rule
+        else:
+            self.gated_delta_rule = chunk_gated_delta_rule
 
         # Output layernorm before projection
         self.out_norm = build_module(
