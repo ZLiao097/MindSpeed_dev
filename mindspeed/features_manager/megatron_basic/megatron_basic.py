@@ -72,9 +72,11 @@ class MegatronBasicFeature(MindSpeedFeature):
         from mindspeed.core.optimizer.fix_duplicate_allgather import start_param_sync
         from mindspeed.core.optimizer.fix_duplicate_allgather import step_with_ready_grads_distrib_opti_wrapper
         from mindspeed.core.optimizer.fix_duplicate_allgather import get_megatron_optimizer_wrapper
+        from mindspeed.core.optimizer.distrib_optimizer import state_dict
         pm.register_patch('megatron.core.distributed.distributed_data_parallel.DistributedDataParallel.start_param_sync', start_param_sync)
         pm.register_patch('megatron.core.optimizer.distrib_optimizer.DistributedOptimizer.step_with_ready_grads', step_with_ready_grads_distrib_opti_wrapper)
         pm.register_patch('megatron.core.optimizer.get_megatron_optimizer', get_megatron_optimizer_wrapper)
+        pm.register_patch('megatron.core.optimizer.distrib_optimizer.DistributedOptimizer.state_dict', state_dict)
 
         # Currently, it is not supported to Cast shard fp32 main params to fp8 model params
         from mindspeed.core.fp8_utils import quantize_param_shard
@@ -86,12 +88,6 @@ class MegatronBasicFeature(MindSpeedFeature):
 
         from mindspeed.core.megatron_basic.megatron_basic import _synchronize_steps
         pm.register_patch('megatron.core.optimizer.optimizer.ChainedOptimizer._synchronize_steps', _synchronize_steps)
-
-        # gdn feature
-        from megatron.core.ssm.gated_delta_net import torch_chunk_gated_delta_rule
-        pm.register_patch('fla.ops.gated_delta_rule.chunk_gated_delta_rule', torch_chunk_gated_delta_rule)
-        from mindspeed.core.ssm.gated_delta_net import GatedDeltaNet
-        pm.register_patch('megatron.core.ssm.gated_delta_net.GatedDeltaNet', GatedDeltaNet)
 
     def register_non_mcore_basic_patches(self, pm, args):
         # args parser patch
