@@ -7,7 +7,7 @@ import torch
 import triton
 import triton.language as tl
 
-from mindspeed.ops.triton.utils import prepare_chunk_indices, exp, prepare_chunk_offsets
+from mindspeed.lite.ops.triton.utils import prepare_chunk_indices, exp, prepare_chunk_offsets
 
 
 @triton.heuristics({
@@ -376,7 +376,10 @@ def chunk_fwd_kernel_o(
                         b_A += tl.dot(b_q, b_k)
 
                     if USE_G:
-                        p_g = tl.make_block_ptr(g + bos * H + i_h * T_max, (T,), (1,), (i_t * BT,), (BT,), (0,))
+                        if IS_VARLEN:
+                            p_g = tl.make_block_ptr(g + bos + i_h * T_max, (T,), (1,), (i_t * BT,), (BT,), (0,))
+                        else:
+                            p_g = tl.make_block_ptr(g + bos * H + i_h * T_max, (T,), (1,), (i_t * BT,), (BT,), (0,))   
                         b_g = tl.load(p_g, boundary_check=(0,))
                         b_o = b_o * exp(b_g)[:, None]
                         b_A = b_A * exp(b_g[:, None] - b_g[None, :])
@@ -466,6 +469,7 @@ def chunk_bwd_dqkwg(
             if bos + (i_t + 1) * BT > T:
                 cur_g = torch.zeros((B, H, BT)).to(g.device)
                 cur_g[:, :, :-(bos + (i_t + 1) * BT - T)] = g[:, :, bos + i_t * BT:bos + (i_t + 1) * BT]
+            else:
                 cur_g = g[:, :, bos + i_t * BT:bos + (i_t + 1) * BT]
             cur_gdiff = cur_g[:, :, :, None] - cur_g[:, :, None, :]
             cur_gdiff = cur_gdiff.clamp(-60, 60).exp()
