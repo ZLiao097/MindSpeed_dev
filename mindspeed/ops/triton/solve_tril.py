@@ -9,7 +9,7 @@ import torch
 import triton
 import triton.language as tl
 
-from mindspeed.lite.ops.triton.utils import prepare_chunk_indices, make_tensor_descriptor, input_guard, is_amd
+from mindspeed.ops.triton.utils import prepare_chunk_indices, make_tensor_descriptor, input_guard, is_amd
 
 
 FLA_TRIL_PRECISION = os.environ.get('FLA_TRIL_PRECISION', 'ieee')

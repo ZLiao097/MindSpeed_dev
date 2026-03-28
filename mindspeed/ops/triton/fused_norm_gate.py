@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import triton
 import triton.language as tl
 
-from mindspeed.lite.ops.triton.utils import get_multiprocessor_count, input_guard
+from mindspeed.ops.triton.utils import get_multiprocessor_count, input_guard
 
 
 @triton.heuristics({

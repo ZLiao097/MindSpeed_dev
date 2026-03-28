@@ -8,7 +8,7 @@ import torch
 import triton
 import triton.language as tl
 
-from mindspeed.lite.ops.triton.utils import prepare_chunk_indices, exp
+from mindspeed.ops.triton.utils import prepare_chunk_indices, exp
 
 
 @triton.heuristics({
