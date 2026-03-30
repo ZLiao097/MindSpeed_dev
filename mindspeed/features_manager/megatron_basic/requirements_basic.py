@@ -30,7 +30,7 @@ class RequirementsBasicFeature(MindSpeedFeature):
         from mindspeed.core.megatron_basic.requirements_basic import version_wrapper, dummy_compile
         from mindspeed.te.pytorch.module.layernorm import MindSpeedTELayernorm
         from mindspeed.ops.triton.l2norm import l2norm
-        from mindspeed.core.ssm.gated_delta_net import torch_chunk_gated_delta_rule
+        from mindspeed.core.ssm.chunk_gated_delta_rule import torch_chunk_gated_delta_rule
         import torch_npu
         pm.register_patch('torch.cuda.nvtx.range_push', torch_npu.npu.mstx.range_start)
         pm.register_patch('torch.cuda.nvtx.range_pop', torch_npu.npu.mstx.range_end)
