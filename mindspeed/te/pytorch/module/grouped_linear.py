@@ -322,6 +322,7 @@ class MindSpeedTEColumnParallelGroupedLinear(MindSpeedTEGroupedLinear):
 
 from megatron.core.process_groups_config import ProcessGroupCollection
 
+
 class MindSpeedTERowParallelGroupedLinear(MindSpeedTEGroupedLinear):
     """
     Wrapper for the Transformer-Engine's `GroupedLinear` layer but specialized
