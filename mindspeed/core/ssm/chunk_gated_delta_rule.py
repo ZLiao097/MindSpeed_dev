@@ -1,5 +1,5 @@
+# Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 # Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-# 2023-2025 Songlin Yang
 # Copyright (c) 2025, HUAWEI CORPORATION.  All rights reserved.
 
 import warnings
