@@ -226,7 +226,6 @@ class MindSpeedTELayerNormColumnParallelLinear(torch.nn.Module):
     def _rmsnorm_scale(self, x_norm):
         """Plain γ*x_norm or TE zero-centered (1+γ)*x_norm."""
         if getattr(self.config, "layernorm_zero_centered_gamma", False):
-            print(f"huyiming : _rmsnorm_scale in layernorm_zero_centered_gamma branch")
             return x_norm * (1 + self.layer_norm_weight)
         return x_norm * self.layer_norm_weight
     
