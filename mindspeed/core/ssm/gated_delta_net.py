@@ -409,14 +409,24 @@ class GatedDeltaNet(MegatronModule):
         else:
             assert self.activation in ["silu", "swish"]
             qkv, _ = causal_conv1d(
-                x=qkv,  # FLA conv1d accepts [b, s, d] format input
-                weight=conv1d_weight.squeeze(1),  # d, 1, w -> d, w
-                bias=conv1d_bias,
-                activation=self.activation,
-                initial_state=None,
-                output_final_state=False,
-                cu_seqlens=cu_seqlens_q,
+                qkv,  # FLA conv1d accepts [b, s, d] format input
+                conv1d_weight.squeeze(1),  # d, 1, w -> d, w
+                conv1d_bias,
+                None,           
+                None,
+                False,
+                self.activation,
+                cu_seqlens_q,
             )
+            # qkv, _ = causal_conv1d(
+            #     x=qkv,  # FLA conv1d accepts [b, s, d] format input
+            #     weight=conv1d_weight.squeeze(1),  # d, 1, w -> d, w
+            #     bias=conv1d_bias,
+            #     activation=self.activation,
+            #     initial_state=None,
+            #     output_final_state=False,
+            #     cu_seqlens=cu_seqlens_q,
+            # )
         nvtx_range_pop(suffix="conv1d")
 
         # Prepare QKV tensors (split, reshape, L2 norm, repeat_interleave, contiguous)
