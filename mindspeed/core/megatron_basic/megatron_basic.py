@@ -355,7 +355,8 @@ def _synchronize_steps(self):
                 else:
                     steps.append(param_group['step'])
     steps = list(set(steps))
-    assert len(steps) <= 1, f"steps: {steps}"
+    if len(steps) > 1:
+        raise AssertionError(f"steps: {steps}")
     step = steps[0] if len(steps) == 1 else None
     for optimizer in self.chained_optimizers:
         for param_group in optimizer.optimizer.param_groups:

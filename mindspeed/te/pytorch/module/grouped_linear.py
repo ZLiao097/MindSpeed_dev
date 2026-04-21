@@ -23,6 +23,7 @@ from megatron.core.parallel_state import (
     get_tensor_model_parallel_world_size
 )
 from megatron.core.transformer.utils import make_sharded_tensors_for_checkpoint
+from megatron.core.process_groups_config import ProcessGroupCollection
 from mindspeed.args_utils import get_full_args as get_args
 from mindspeed.core.transformer.moe.grouped_gemm_util import Ops
 

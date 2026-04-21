@@ -389,8 +389,6 @@ def torch_chunk_gated_delta_rule(
     '''
     Torch-native implementation of chunked gated delta rule for deterministic mode.
     Need this because FLA is not deterministic.
-
-    Reference: https://github.com/huggingface/transformers/blob/144c8ce2809a2e21914017652700e1ecb450501e/src/transformers/models/qwen3_next/modeling_qwen3_next.py#L470-L547
     '''
 
     initial_dtype = query.dtype
