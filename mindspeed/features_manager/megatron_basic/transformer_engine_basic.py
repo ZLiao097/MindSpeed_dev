@@ -129,13 +129,27 @@ class TransformerEngineBasicFeature(MindSpeedFeature):
                               MindSpeedTERowParallelGroupedLinear)
             pm.register_patch('megatron.core.extensions.transformer_engine.TELinear', MindSpeedTELinear)
 
-        # Patch Megatron-Bridge param_mapping
+        # Patch Megatron-Bridge param_mapping and TransformerConfig.finalize
         try:
-            from mindspeed.core.bridge.param_mapping import patch_module_type_registry, _detect_parallelism_type_wrapper
-            patch_module_type_registry()
+            from mindspeed.core.bridge.param_mapping import (
+                _detect_parallelism_type_wrapper,
+                transformer_config_finalize_wrapper
+            )
             pm.register_patch(
                 'megatron.bridge.models.conversion.param_mapping.AutoMapping._detect_parallelism_type',
                 _detect_parallelism_type_wrapper
+            )
+            pm.register_patch(
+                'megatron.bridge.models.transformer_config.TransformerConfig.finalize',
+                transformer_config_finalize_wrapper
+            )
+            pm.register_patch(
+                'megatron.bridge.models.transformer_config.MLATransformerConfig.finalize',
+                transformer_config_finalize_wrapper
+            )
+            pm.register_patch(
+                'megatron.bridge.models.transformer_config.HeterogeneousTransformerConfig.finalize',
+                transformer_config_finalize_wrapper
             )
         except ImportError:
             pass

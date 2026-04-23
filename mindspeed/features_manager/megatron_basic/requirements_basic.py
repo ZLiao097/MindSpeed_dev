@@ -21,6 +21,11 @@ class RequirementsBasicFeature(MindSpeedFeature):
                                 '2: Advanced acceleration algorithm')
 
     def pre_register_patches(self, patch_manager, args):
+        from mindspeed.core.megatron_basic.requirements_basic import (
+            create_dummy_modelopt_modules,
+        )
+        create_dummy_modelopt_modules()
+        
         self.te_adaptation(patch_manager, args)
         self.apex_adaptation(patch_manager, args)
         self.torch_adaptation(patch_manager, args)
