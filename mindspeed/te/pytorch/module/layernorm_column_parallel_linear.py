@@ -223,6 +223,7 @@ class MindSpeedTELayerNormColumnParallelLinear(torch.nn.Module):
                             bias=self.layer_norm_bias,
                             eps=self.config.layernorm_epsilon
                             )
+
     def _rmsnorm_scale(self, x_norm):
         """Plain γ*x_norm or TE zero-centered (1+γ)*x_norm."""
         if getattr(self.config, "layernorm_zero_centered_gamma", False):
