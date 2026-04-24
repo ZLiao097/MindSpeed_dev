@@ -705,7 +705,10 @@ def get_parameter_local_cp(
     slices = [slice(None)] * param.dim()
     dim_size = param.size(dim=dim)
     slices[dim] = slice(cp_rank * dim_size // cp_size, (cp_rank + 1) * dim_size // cp_size)
-    param = param[slices]
+    if tuple(int(x) for x in torch.__version__.split('.')[:2]) >= (2, 9):
+        param = param[tuple(slices)]
+    else:
+        param = param[slices]
     return param
 
 
