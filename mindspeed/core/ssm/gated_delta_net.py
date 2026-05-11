@@ -1,15 +1,21 @@
 # Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
 # Copyright (c) 2025, Songlin Yang, Jan Kautz, Ali Hatamizadeh.
-# Copyright (c) 2026, Huawei Technologies Co., Ltd. All rights reserved.
+
+# Some of this code was adopted from https://github.com/huggingface/transformers
+# This source code is licensed under the Apache license found in the
+# LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, replace
+from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+from megatron.core.dist_checkpointing import ShardedTensor
+from megatron.core.dist_checkpointing.mapping import ReplicaId, ShardedTensorFactory
 from megatron.core.fp8_utils import get_fp8_align_size
 from megatron.core.inference.contexts import BaseInferenceContext
 from megatron.core.jit import jit_fuser
@@ -23,15 +29,15 @@ from megatron.core.ssm.mamba_context_parallel import (
 )
 from megatron.core.tensor_parallel import get_cuda_rng_tracker
 from megatron.core.transformer import TransformerConfig
+from megatron.core.transformer.identity_op import IdentityOp
 from megatron.core.transformer.module import MegatronModule
-from megatron.core.transformer.spec_utils import build_module
+from megatron.core.transformer.spec_utils import ModuleSpec, build_module
 from megatron.core.transformer.utils import (
     ensure_metadata_has_dp_cp_group,
     make_sharded_tensors_for_checkpoint,
     sharded_state_dict_default,
 )
 from megatron.core.utils import deprecate_inference_params, nvtx_range_pop, nvtx_range_push
-from megatron.core.ssm.gated_delta_net import GatedDeltaNetSubmodules, _split_tensor_factory
 
 try:
     from fla.modules.l2norm import l2norm # 64k及以上会有偶现报错
@@ -39,6 +45,8 @@ try:
 
     HAVE_FLA = True
 except ImportError:
+    causal_conv1d = None
+    l2norm = None
     chunk_gated_delta_rule = None
 
     HAVE_FLA = False
@@ -57,6 +65,16 @@ def l2norm(x: torch.FloatTensor, dim: int = -1, eps: float = 1e-6):
     inv_norm = torch.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
     # Counteract verl's autocast promotion (bf16 -> fp32) by restoring original dtype
     return (x * inv_norm).to(original_dtype)
+
+@dataclass
+class GatedDeltaNetSubmodules:
+    """
+    Contains the module specs for the input linear, output norm, and output linear layers.
+    """
+
+    in_proj: Union[ModuleSpec, type] = IdentityOp
+    out_norm: Union[ModuleSpec, type] = IdentityOp
+    out_proj: Union[ModuleSpec, type] = IdentityOp
 
 
 class GatedDeltaNet(MegatronModule):
@@ -170,8 +188,10 @@ class GatedDeltaNet(MegatronModule):
             dtype=config.params_dtype,
         )
         setattr(self.conv1d.weight, "tensor_model_parallel", True)
+        setattr(self.conv1d.weight, "partition_dim", 0)
         if conv_bias:
             setattr(self.conv1d.bias, "tensor_model_parallel", True)
+            setattr(self.conv1d.bias, "partition_dim", 0)
 
         # Time step projection (discretization)
         self.num_v_heads_local_tp = self.num_value_heads // self.tp_size
@@ -184,6 +204,7 @@ class GatedDeltaNet(MegatronModule):
             )
         )
         setattr(self.dt_bias, "tensor_model_parallel", True)
+        setattr(self.dt_bias, "partition_dim", 0)
         # A_log parameter
         self.A_log = nn.Parameter(
             torch.empty(
@@ -193,7 +214,8 @@ class GatedDeltaNet(MegatronModule):
             )
         )
         setattr(self.A_log, "tensor_model_parallel", True)
-        
+        setattr(self.A_log, "partition_dim", 0)
+
         if self.config.deterministic_mode:
             self.gated_delta_rule = torch_chunk_gated_delta_rule
         else:
@@ -287,9 +309,37 @@ class GatedDeltaNet(MegatronModule):
             # TODO: support inference
             raise NotImplementedError("GDN does not support inference for now.")
 
-        if packed_seq_params is not None:
-            # TODO: support packed sequence
-            raise NotImplementedError("GDN does not support packed sequence for now.")
+        if packed_seq_params is not None and packed_seq_params.qkv_format == 'thd':
+            assert batch == 1, "Packed sequence expects batch dimension to be 1"
+            assert (
+                not self.config.deterministic_mode
+            ), "Packed sequence does not support deterministic mode."
+
+            # Resolve cu_seqlens with alignment padding handling.
+            cu_seqlens_q = self._resolve_cu_seqlens(
+                packed_seq_params.cu_seqlens_q_padded,
+                packed_seq_params.cu_seqlens_q,
+                seq_len,
+                "cu_seqlens_q",
+            )
+            cu_seqlens_kv = self._resolve_cu_seqlens(
+                packed_seq_params.cu_seqlens_kv_padded,
+                packed_seq_params.cu_seqlens_kv,
+                seq_len,
+                "cu_seqlens_kv",
+            )
+            assert torch.equal(cu_seqlens_q, cu_seqlens_kv), (
+                "Currently only support cu_seqlens_q equals to cu_seqlens_kv, "
+                f"but got {cu_seqlens_q=} and {cu_seqlens_kv=}"
+            )
+            num_packed_seqs = cu_seqlens_q.shape[0] - 1
+            assert num_packed_seqs > 0, (
+                "Number of packed sequences must be greater than 0, "
+                f"but got {cu_seqlens_q=} and {cu_seqlens_kv=}"
+            )
+        else:
+            cu_seqlens_q = None
+            cu_seqlens_kv = None
 
         # Input projection
         nvtx_range_push(suffix="in_proj")
@@ -297,20 +347,41 @@ class GatedDeltaNet(MegatronModule):
         nvtx_range_pop(suffix="in_proj")
 
         # CP All to All: CP to HP
-        qkvzba = tensor_a2a_cp2hp(
-            qkvzba,
-            seq_dim=0,
-            head_dim=-1,
-            cp_group=self.pg_collection.cp,
-            split_sections=[
-                self.qk_dim_local_tp,
-                self.qk_dim_local_tp,
-                self.v_dim_local_tp,
-                self.v_dim_local_tp,
-                self.num_value_heads // self.tp_size,
-                self.num_value_heads // self.tp_size,
-            ],
-        )
+        if packed_seq_params is not None and packed_seq_params.qkv_format == 'thd':
+            unpacked_qkvzba = _unpack_sequence(qkvzba, cu_seqlens_q // self.cp_size, dim=0)
+            outputs = []
+            for qkvzba_i in unpacked_qkvzba:
+                qkvzba_i = tensor_a2a_cp2hp(
+                    qkvzba_i,
+                    seq_dim=0,
+                    head_dim=-1,
+                    cp_group=self.pg_collection.cp,
+                    split_sections=[
+                        self.qk_dim_local_tp,
+                        self.qk_dim_local_tp,
+                        self.v_dim_local_tp,
+                        self.v_dim_local_tp,
+                        self.num_value_heads // self.tp_size,
+                        self.num_value_heads // self.tp_size,
+                    ],
+                )
+                outputs.append(qkvzba_i)
+            qkvzba = torch.cat(outputs, dim=0)
+        else:
+            qkvzba = tensor_a2a_cp2hp(
+                qkvzba,
+                seq_dim=0,
+                head_dim=-1,
+                cp_group=self.pg_collection.cp,
+                split_sections=[
+                    self.qk_dim_local_tp,
+                    self.qk_dim_local_tp,
+                    self.v_dim_local_tp,
+                    self.v_dim_local_tp,
+                    self.num_value_heads // self.tp_size,
+                    self.num_value_heads // self.tp_size,
+                ],
+            )
 
         # Transpose: s b x --> b s x
         # From sbhd to bshd format
@@ -355,7 +426,7 @@ class GatedDeltaNet(MegatronModule):
             if self.conv_bias
             else None
         )
-        if (causal_conv1d is None) or self.config.deterministic_mode:
+        if self.config.deterministic_mode:
             qkv = qkv.transpose(1, 2).contiguous()  # b, s, d -> b, d, s
             conv_out = F.conv1d(
                 input=qkv,  # Torch-native only accept [b, d, s] format input
@@ -378,6 +449,7 @@ class GatedDeltaNet(MegatronModule):
                 None,
                 False,
                 self.activation,
+                cu_seqlens_q,
             )
             # qkv, _ = causal_conv1d(
             #     x=qkv,  # FLA conv1d accepts [b, s, d] format input
@@ -415,6 +487,7 @@ class GatedDeltaNet(MegatronModule):
             initial_state=None,
             output_final_state=False,
             use_qk_l2norm_in_kernel=False,
+            cu_seqlens=cu_seqlens_q,
         )
         nvtx_range_pop(suffix="gated_delta_rule")
 
@@ -429,9 +502,19 @@ class GatedDeltaNet(MegatronModule):
         norm_out = norm_out.transpose(0, 1).contiguous()
 
         # CP all to all: HP to CP
-        norm_out = tensor_a2a_hp2cp(
-            norm_out, seq_dim=0, head_dim=-1, cp_group=self.pg_collection.cp
-        )
+        if packed_seq_params is not None and packed_seq_params.qkv_format == 'thd':
+            unpacked_norm_out = _unpack_sequence(norm_out, cu_seqlens_q, dim=0)
+            outputs = []
+            for norm_out_i in unpacked_norm_out:
+                norm_out_i = tensor_a2a_hp2cp(
+                    norm_out_i, seq_dim=0, head_dim=-1, cp_group=self.pg_collection.cp
+                )
+                outputs.append(norm_out_i)
+            norm_out = torch.cat(outputs, dim=0)
+        else:
+            norm_out = tensor_a2a_hp2cp(
+                norm_out, seq_dim=0, head_dim=-1, cp_group=self.pg_collection.cp
+            )
 
         # Output projection
         nvtx_range_push(suffix="out_proj")
@@ -502,6 +585,23 @@ class GatedDeltaNet(MegatronModule):
         g = -A_log_local_cp.exp() * F.softplus(alpha.float() + dt_bias_local_cp)  # In fp32
         beta = beta.sigmoid()
         return g, beta
+
+    def _resolve_cu_seqlens(self, cu_seqlens_padded, cu_seqlens_actual, total_seq_len, name):
+        """Resolve cu_seqlens for packed sequence all-to-all, handling alignment padding."""
+        if cu_seqlens_padded is not None:
+            cu_seqlens = cu_seqlens_padded
+        else:
+            cu_seqlens = cu_seqlens_actual
+
+        total_cu = cu_seqlens[-1].item()
+        if total_cu != total_seq_len:
+            raise ValueError(
+                f"GDN: {name}[-1]={total_cu} does not match "
+                f"total_sequence_length={total_seq_len}. "
+                f"({cu_seqlens_padded=}, {cu_seqlens_actual=})."
+            )
+
+        return cu_seqlens
 
     def sharded_state_dict(self, prefix="", sharded_offsets=(), metadata=None, tp_group=None):
         """Provide a sharded state dictionary for distributed checkpointing."""
@@ -599,6 +699,80 @@ class GatedDeltaNet(MegatronModule):
     def _backward_out_proj(self):
         """Computes weight gradients of output projection layer."""
         self.out_proj.backward_dw()
+
+
+def _unpack_sequence(x, cu_seqlens, dim=1):
+    unpacked_x = []
+    num_seqs = cu_seqlens.shape[0] - 1
+    for i in range(num_seqs):
+        idx_start = cu_seqlens[i].item()
+        idx_end = cu_seqlens[i + 1].item()
+        chunked_index = [slice(None)] * dim + [slice(idx_start, idx_end)]
+        unpacked_x.append(x[tuple(chunked_index)])
+    return unpacked_x
+
+
+####################
+# Sharded state dict utilities
+####################
+def _split_tensor_factory(
+    orig_sh_ten: ShardedTensor, split_sections: List[int], split_names: List[str], split_dim: int
+) -> ShardedTensorFactory:
+    """Builds a factory that splits a given ShardedTensor into several independent chunks."""
+    assert isinstance(orig_sh_ten, ShardedTensor), type(orig_sh_ten)
+    orig_sh_ten_no_data = orig_sh_ten.without_data()  # remove `data` reference
+
+    if sum(split_sections) != orig_sh_ten_no_data.local_shape[split_dim]:
+        raise ValueError(
+            f"Split sections must cover the whole dimension size, "
+            f"got {split_sections=} vs dimensions size "
+            f"{orig_sh_ten_no_data.local_shape[split_dim]}"
+        )
+
+    assert not isinstance(
+        split_sections, int
+    ), "Splitting into predefined section sizes is supported (`split_sections` must be a list)"
+    assert len(split_sections) == len(split_names), (len(split_sections), len(split_names))
+
+    @torch.no_grad()
+    def sh_ten_build_fn(
+        key: str, t: torch.Tensor, replica_id: ReplicaId, flattened_range: Optional[slice]
+    ):
+        factory_sh_ten = replace(
+            orig_sh_ten_no_data,
+            key=key,
+            data=t,
+            dtype=t.dtype,
+            replica_id=replica_id,
+            flattened_range=flattened_range,
+        )
+
+        chunk_sh_tens = []
+        split_start = 0
+        for split_size, split_name in zip(split_sections, split_names):
+            split_chunks = factory_sh_ten.narrow(split_dim, split_start, split_size)
+            for sh_ten in split_chunks:
+                sh_ten.key = f"{sh_ten.key}.{split_name}"
+            chunk_sh_tens.extend(split_chunks)
+            split_start += split_size
+
+        assert split_start == orig_sh_ten_no_data.local_shape[split_dim], (
+            split_start,
+            orig_sh_ten_no_data.local_shape[split_dim],
+        )
+        assert sum(sh_ten.data.numel() for sh_ten in chunk_sh_tens) == t.numel(), (
+            chunk_sh_tens,
+            t.shape,
+        )
+        return chunk_sh_tens
+
+    @torch.no_grad()
+    def sh_ten_merge_fn(sub_state_dict):
+        return torch.cat(sub_state_dict)
+
+    return ShardedTensorFactory(
+        orig_sh_ten.key, orig_sh_ten.data, sh_ten_build_fn, sh_ten_merge_fn, orig_sh_ten.replica_id
+    )
 
 
 ####################
