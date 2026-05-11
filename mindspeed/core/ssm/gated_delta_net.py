@@ -34,7 +34,7 @@ from megatron.core.utils import deprecate_inference_params, nvtx_range_pop, nvtx
 from megatron.core.ssm.gated_delta_net import GatedDeltaNetSubmodules, _split_tensor_factory
 
 try:
-    from fla.modules.l2norm import l2norm
+    from fla.modules.l2norm import l2norm # 64k及以上会有偶现报错
     from fla.ops.gated_delta_rule import chunk_gated_delta_rule
 
     HAVE_FLA = True
@@ -48,6 +48,14 @@ try:
 except ImportError:
     causal_conv1d = None
     causal_conv1d_update = None
+
+
+def l2norm(x: torch.FloatTensor, dim: int = -1, eps: float = 1e-6):
+    """This function is intended to align with the l2norm implementation in the FLA library."""
+    original_dtype = x.dtype
+    inv_norm = torch.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
+    # Counteract verl's autocast promotion (bf16 -> fp32) by restoring original dtype
+    return (x * inv_norm).to(original_dtype)
 
 
 class GatedDeltaNet(MegatronModule):

@@ -34,8 +34,8 @@ class RequirementsBasicFeature(MindSpeedFeature):
     def te_adaptation(self, pm, args):
         from mindspeed.core.megatron_basic.requirements_basic import version_wrapper, dummy_compile
         from mindspeed.te.pytorch.module.layernorm import MindSpeedTELayernorm
-        from mindspeed.ops.triton.l2norm import l2norm
-        from mindspeed.core.ssm.chunk_gated_delta_rule import torch_chunk_gated_delta_rule
+        # from mindspeed.ops.triton.l2norm import l2norm
+        from mindspeed.core.ssm.chunk_gated_delta_rule import torch_chunk_gated_delta_rule, chunk_gated_delta_rule
         from mindspeed.core.megatron_basic.ref_impl import hadamard_transform_ref
         import torch_npu
         pm.register_patch('torch.cuda.nvtx.range_push', torch_npu.npu.mstx.range_start)
@@ -62,8 +62,8 @@ class RequirementsBasicFeature(MindSpeedFeature):
         pm.register_patch('transformer_engine.pytorch.ops.ReGLU', torch.nn.Module, create_dummy=True)
         pm.register_patch('transformer_engine.pytorch.ops.FusibleOperation', torch.nn.Module, create_dummy=True)
         pm.register_patch('flash_attn.flash_attn_interface.flash_attn_unpadded_func', create_dummy=True)
-        pm.register_patch('fla.modules.l2norm.l2norm', l2norm, create_dummy=True)
-        pm.register_patch('fla.ops.gated_delta_rule.chunk_gated_delta_rule', torch_chunk_gated_delta_rule, create_dummy=True)
+        # pm.register_patch('fla.modules.l2norm.l2norm', l2norm, create_dummy=True)
+        pm.register_patch('fla.ops.gated_delta_rule.chunk_gated_delta_rule', chunk_gated_delta_rule, create_dummy=True)
         pm.register_patch('fast_hadamard_transform.hadamard_transform', hadamard_transform_ref, create_dummy=True)
 
     def apex_adaptation(self, pm, args):

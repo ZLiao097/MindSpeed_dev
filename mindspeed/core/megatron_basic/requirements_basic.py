@@ -79,38 +79,42 @@ def create_dummy_modelopt_modules():
     which calls torch.cuda.get_device_capability() that returns None, causing TypeError.
     This function pre-registers dummy modules in sys.modules to bypass the real imports.
     """
-    dummy_modules = [
-        'modelopt',
-        'modelopt.torch',
-        'modelopt.torch.quantization',
-        'modelopt.torch.quantization.utils',
-        'modelopt.torch.quantization.nn',
-        'modelopt.torch.quantization.nn.modules',
-        'modelopt.torch.quantization.nn.modules.quant_module',
-        'modelopt.torch.quantization.tensor_quant',
-        'modelopt.torch.quantization.triton',
-    ]
+    # dummy_modules = [
+    #     'modelopt',
+    #     'modelopt.torch',
+    #     'modelopt.torch.quantization',
+    #     'modelopt.torch.quantization.utils',
+    #     'modelopt.torch.quantization.nn',
+    #     'modelopt.torch.quantization.nn.modules',
+    #     'modelopt.torch.quantization.nn.modules.quant_module',
+    #     'modelopt.torch.quantization.tensor_quant',
+    #     'modelopt.torch.quantization.triton',
+    # ]
     
-    for module_name in dummy_modules:
-        if module_name not in sys.modules:
-            sys.modules[module_name] = types.ModuleType(module_name)
+    # for module_name in dummy_modules:
+    #     if module_name not in sys.modules:
+    #         sys.modules[module_name] = types.ModuleType(module_name)
     
-    def is_quantized(model):
-        return False
+    # def is_quantized(model):
+    #     return False
     
-    def QuantInputBase(*args, **kwargs):
-        pass
+    # def QuantInputBase(*args, **kwargs):
+    #     pass
     
-    def QuantModuleRegistry(*args, **kwargs):
-        pass
+    # def QuantModuleRegistry(*args, **kwargs):
+    #     pass
     
-    def QUANT_DESC_8BIT_PER_TENSOR(*args, **kwargs):
-        pass
+    # def QUANT_DESC_8BIT_PER_TENSOR(*args, **kwargs):
+    #     pass
     
-    sys.modules['modelopt.torch.quantization.utils'].is_quantized = is_quantized
-    sys.modules['modelopt.torch.quantization.nn.modules.quant_module'].QuantInputBase = QuantInputBase
-    sys.modules['modelopt.torch.quantization.nn.modules.quant_module'].QuantModuleRegistry = QuantModuleRegistry
-    sys.modules['modelopt.torch.quantization.tensor_quant'].QUANT_DESC_8BIT_PER_TENSOR = QUANT_DESC_8BIT_PER_TENSOR
+    # sys.modules['modelopt.torch.quantization.utils'].is_quantized = is_quantized
+    # sys.modules['modelopt.torch.quantization.nn.modules.quant_module'].QuantInputBase = QuantInputBase
+    # sys.modules['modelopt.torch.quantization.nn.modules.quant_module'].QuantModuleRegistry = QuantModuleRegistry
+    # sys.modules['modelopt.torch.quantization.tensor_quant'].QUANT_DESC_8BIT_PER_TENSOR = QUANT_DESC_8BIT_PER_TENSOR
+    def get_device_capability(device=None):
+        return (-1, -1)
+    torch.cuda.get_device_capability = get_device_capability
+    
 
 
 def version_wrapper(fn):

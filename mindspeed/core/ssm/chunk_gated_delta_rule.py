@@ -8,7 +8,7 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 
-from mindspeed.ops.triton.l2norm import l2norm_bwd, l2norm_fwd, l2norm
+# from mindspeed.ops.triton.l2norm import l2norm_bwd, l2norm_fwd, l2norm
 from mindspeed.ops.triton.chunk_delta_h import chunk_gated_delta_rule_bwd_dhu, chunk_gated_delta_rule_fwd_h
 from mindspeed.ops.triton.chunk_o import chunk_bwd_dqkwg, chunk_bwd_dv_local, chunk_fwd_o
 from mindspeed.ops.triton.chunk_scaled_dot_kkt import chunk_scaled_dot_kkt_fwd
@@ -184,11 +184,11 @@ class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
         use_qk_l2norm_in_kernel: bool = False,
         chunk_size: int = 64,
     ):
-        if use_qk_l2norm_in_kernel:
-            q, q_rstd = l2norm_fwd(q)
-            k, k_rstd = l2norm_fwd(k)
-        else:
-            q_rstd, k_rstd = None, None
+        # if use_qk_l2norm_in_kernel:
+        #     q, q_rstd = l2norm_fwd(q)
+        #     k, k_rstd = l2norm_fwd(k)
+        # else:
+        q_rstd, k_rstd = None, None
 
         g, o, A, final_state = chunk_gated_delta_rule_fwd(
             q=q,
@@ -231,9 +231,9 @@ class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
             cu_seqlens=cu_seqlens,
             chunk_size=ctx.chunk_size,
         )
-        if ctx.use_qk_l2norm_in_kernel:
-            dq = l2norm_bwd(q, q_rstd, dq)
-            dk = l2norm_bwd(k, k_rstd, dk)
+        # if ctx.use_qk_l2norm_in_kernel:
+        #     dq = l2norm_bwd(q, q_rstd, dq)
+        #     dk = l2norm_bwd(k, k_rstd, dk)
         return dq.to(q), dk.to(k), dv.to(v), dg.to(g), db.to(beta), None, dh0, None, None, None, None
 
 
@@ -355,6 +355,18 @@ def chunk_gated_delta_rule(
             )
     if scale is None:
         scale = k.shape[-1] ** -0.5
+
+    def l2norm(x: torch.FloatTensor, dim: int = -1, eps: float = 1e-6):
+        """This function is intended to align with the l2norm implementation in the FLA library."""
+        original_dtype = x.dtype
+        inv_norm = torch.rsqrt((x * x).sum(dim=dim, keepdim=True) + eps)
+        # Counteract verl's autocast promotion (bf16 -> fp32) by restoring original dtype
+        return (x * inv_norm).to(original_dtype)
+
+    if use_qk_l2norm_in_kernel:
+        q = l2norm(q, dim=-1, eps=1e-6)
+        k = l2norm(k, dim=-1, eps=1e-6)
+
     o, final_state = ChunkGatedDeltaRuleFunction.apply(
         q,
         k,
