@@ -83,6 +83,10 @@ def _detect_parallelism_type_wrapper(original_func):
     return wrapper
 
 
+def qwen35_vl_moe_validate_parallelism(self):
+    pass
+
+
 def transformer_config_finalize_wrapper(fn):
     """wrapper 为 Megatron-Bridge TransformerConfig.finalize() 注入完整参数"""
     @wraps(fn)

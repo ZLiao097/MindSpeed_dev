@@ -151,5 +151,11 @@ class TransformerEngineBasicFeature(MindSpeedFeature):
                 'megatron.bridge.models.transformer_config.HeterogeneousTransformerConfig.finalize',
                 transformer_config_finalize_wrapper
             )
+
+            from mindspeed.core.bridge.param_mapping import qwen35_vl_moe_validate_parallelism
+            pm.register_patch(
+                'megatron.bridge.models.qwen_vl.qwen35_vl_provider.Qwen35VLMoEModelProvider.validate_parallelism',
+                qwen35_vl_moe_validate_parallelism
+            )
         except ImportError:
             pass
