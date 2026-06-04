@@ -45,8 +45,7 @@ except ImportError:
 
 try:
     # from causal_conv1d import causal_conv1d
-    from mojo_opset import MojoCausalConv1dFunction
-    causal_conv1d = MojoCausalConv1dFunction.apply
+    from ops.triton.causal_conv1d import causal_conv1d
 except ImportError:
     causal_conv1d = None
     causal_conv1d_update = None
