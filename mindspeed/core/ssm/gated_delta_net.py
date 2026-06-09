@@ -53,7 +53,7 @@ except ImportError:
 
 try:
     # from causal_conv1d import causal_conv1d
-    from ops.triton.causal_conv1d import causal_conv1d
+    from mindspeed.ops.triton.causal_conv1d import causal_conv1d
 except ImportError:
     causal_conv1d = None
     causal_conv1d_update = None
